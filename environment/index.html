@@ -93,6 +93,27 @@
     <div class="controls-hint">Pinch over a button to activate</div>
   </div>
 
+  <div id="tryon" class="tryon">
+    <video id="tryon-video" playsinline muted></video>
+    <div class="tryon-overlay">
+      <div class="tryon-top">
+        <div class="tryon-label">Try-on wardrobe</div>
+        <div class="tryon-tip">Swipe left to return · Swipe right to enter</div>
+      </div>
+      <div class="tryon-center">
+        <div id="countdown" class="countdown hidden">3</div>
+        <div id="photo-container" class="photo-container hidden">
+          <img id="photo-preview" alt="Capture preview">
+          <div class="photo-hint">Thumbs up to save · Thumbs down to retake</div>
+        </div>
+      </div>
+      <div class="tryon-bottom">
+        <button class="control-btn shutter" data-action="shutter">Take photo</button>
+        <div class="tryon-hint">Pinch or tap the shutter. 3s timer before capture.</div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="script.js"></script>

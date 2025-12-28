@@ -5,6 +5,11 @@ const cameraDot = document.getElementById('camera-dot');
 const controlButtons = Array.from(document.querySelectorAll('.control-btn'));
 const editToggleBtn = document.querySelector('[data-action="toggle-edit"]');
 const handCursor = document.getElementById('hand-cursor');
+const tryon = document.getElementById('tryon');
+const tryonVideo = document.getElementById('tryon-video');
+const countdownEl = document.getElementById('countdown');
+const photoContainer = document.getElementById('photo-container');
+const photoPreview = document.getElementById('photo-preview');
 
 const widgetElements = Array.from(document.querySelectorAll('.widget'));
 const widgetState = {};
@@ -18,7 +23,22 @@ const BUTTON_COOLDOWN_MS = 800;
 const SNAP_SIZE = 16;
 const ALIGN_THRESHOLD = 140;
 const BUTTON_HIT_EXPAND = 24;
+const SWIPE_THRESHOLD = 0.2;
+const SWIPE_TIME_MAX = 900;
+const SWIPE_COOLDOWN_MS = 900;
+const GESTURE_COOLDOWN_MS = 1200;
 
+let mode = 'mirror'; // mirror | tryon
+let lastSwipeX = null;
+let lastSwipeTime = 0;
+let swipeStartX = null;
+let swipeStartTime = 0;
+let lastGestureTime = 0;
+let isCountingDown = false;
+let countdownTimer = null;
+let photoReady = false;
+let captureDataUrl = null;
+const captureCanvas = document.createElement('canvas');
 function setStatus(message, color) {
   statusText.textContent = message;
   const dotColors = {
@@ -130,6 +150,15 @@ function setCursor(point) {
 
 function hitTestButtons(point) {
   return controlButtons.find((btn) => {
+    const styles = window.getComputedStyle(btn);
+    if (
+      styles.display === 'none' ||
+      styles.visibility === 'hidden' ||
+      styles.opacity === '0' ||
+      styles.pointerEvents === 'none'
+    ) {
+      return false;
+    }
     const rect = btn.getBoundingClientRect();
     const expanded = {
       left: rect.left - BUTTON_HIT_EXPAND,
@@ -175,6 +204,168 @@ function runAction(action) {
   if (action === 'toggle-edit') {
     setEditMode(!editMode);
   }
+  if (action === 'shutter') {
+    triggerShutter();
+  }
+}
+
+function setMode(next) {
+  if (mode === next) return;
+  mode = next;
+  document.body.classList.toggle('mode-tryon', mode === 'tryon');
+  if (mode === 'tryon') {
+    setEditMode(false);
+    setStatus('Try-on mode · Swipe left to return', 'ok');
+    hidePhotoPreview();
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      countdownEl.classList.add('hidden');
+      isCountingDown = false;
+    }
+    lastSwipeX = null;
+    swipeStartX = null;
+    swipeStartTime = 0;
+  } else {
+    setStatus(editMode ? 'Move mode on' : 'Mirror mode', 'idle');
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    countdownEl.classList.add('hidden');
+    isCountingDown = false;
+    hidePhotoPreview();
+    lastSwipeX = null;
+    swipeStartX = null;
+    swipeStartTime = 0;
+  }
+}
+
+function detectSwipes(hands) {
+  const now = Date.now();
+  hands.forEach((landmarks) => {
+    const mirroredX = 1 - landmarks[8].x;
+    if (swipeStartX === null) {
+      swipeStartX = mirroredX;
+      swipeStartTime = now;
+      lastSwipeX = mirroredX;
+      return;
+    }
+
+    const dx = mirroredX - swipeStartX;
+    const dt = now - swipeStartTime;
+    const sinceLast = now - lastSwipeTime;
+    const moving = Math.abs(mirroredX - lastSwipeX) > 0.02;
+
+    if (!pinchActive && sinceLast > SWIPE_COOLDOWN_MS && dt <= SWIPE_TIME_MAX) {
+      if (dx > SWIPE_THRESHOLD && mode === 'mirror') {
+        setMode('tryon');
+        lastSwipeTime = now;
+        swipeStartX = null;
+        swipeStartTime = 0;
+      } else if (dx < -SWIPE_THRESHOLD && mode === 'tryon') {
+        setMode('mirror');
+        lastSwipeTime = now;
+        swipeStartX = null;
+        swipeStartTime = 0;
+      }
+    }
+
+    if (dt > SWIPE_TIME_MAX || (!moving && dt > 280)) {
+      swipeStartX = mirroredX;
+      swipeStartTime = now;
+    }
+
+    lastSwipeX = mirroredX;
+  });
+}
+
+function detectThumbGestures(hands) {
+  const now = Date.now();
+  if (now - lastGestureTime < GESTURE_COOLDOWN_MS) return;
+  const folded = (tip, pip) => tip.y > pip.y + 0.02;
+
+  for (const landmarks of hands) {
+    const thumbTip = landmarks[4];
+    const thumbMcp = landmarks[2];
+    const wrist = landmarks[0];
+    const fingersFolded =
+      folded(landmarks[8], landmarks[6]) &&
+      folded(landmarks[12], landmarks[10]) &&
+      folded(landmarks[16], landmarks[14]) &&
+      folded(landmarks[20], landmarks[18]);
+
+    if (!fingersFolded) continue;
+
+    if (thumbTip.y < thumbMcp.y - 0.04 && thumbTip.y < wrist.y - 0.02) {
+      lastGestureTime = now;
+      savePhoto();
+      return;
+    }
+    if (thumbTip.y > thumbMcp.y + 0.04 && thumbTip.y > wrist.y + 0.02) {
+      lastGestureTime = now;
+      retakePhoto();
+      return;
+    }
+  }
+}
+
+function hidePhotoPreview() {
+  photoReady = false;
+  captureDataUrl = null;
+  photoContainer.classList.add('hidden');
+  photoPreview.src = '';
+  countdownEl.classList.add('hidden');
+}
+
+function triggerShutter() {
+  if (mode !== 'tryon' || isCountingDown) return;
+  hidePhotoPreview();
+  countdownEl.classList.remove('hidden');
+  let counter = 3;
+  countdownEl.textContent = counter;
+  isCountingDown = true;
+  setStatus('Photo in 3... hold still', 'ok');
+  countdownTimer = setInterval(() => {
+    counter -= 1;
+    if (counter <= 0) {
+      clearInterval(countdownTimer);
+      countdownEl.classList.add('hidden');
+      isCountingDown = false;
+      capturePhoto();
+    } else {
+      countdownEl.textContent = counter;
+    }
+  }, 1000);
+}
+
+function capturePhoto() {
+  const video = tryonVideo || videoElement;
+  const width = video.videoWidth || 1280;
+  const height = video.videoHeight || 720;
+  captureCanvas.width = width;
+  captureCanvas.height = height;
+  const ctx = captureCanvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, width, height);
+  captureDataUrl = captureCanvas.toDataURL('image/png');
+  photoPreview.src = captureDataUrl;
+  photoContainer.classList.remove('hidden');
+  photoReady = true;
+  setStatus('Photo ready · Thumbs up to save · Thumbs down to retake', 'ok');
+}
+
+function savePhoto() {
+  if (!photoReady || !captureDataUrl) return;
+  const link = document.createElement('a');
+  link.href = captureDataUrl;
+  link.download = 'smart-mirror-capture.png';
+  link.click();
+  setStatus('Photo saved locally (downloaded)', 'ok');
+}
+
+function retakePhoto() {
+  hidePhotoPreview();
+  triggerShutter();
 }
 
 function snapWidget(id) {
@@ -240,12 +431,17 @@ function processPinch(landmarks) {
   const threshold = Math.max(handSpan * 0.7, 0.05);
 
   const mirroredX = 1 - index.x;
-  const pinchPoint = {
+  const pinchPointMirror = {
     x: mirrorRect.left + mirroredX * mirrorRect.width,
     y: mirrorRect.top + index.y * mirrorRect.height,
   };
 
-  setCursor(pinchPoint);
+  const pinchPointUI = {
+    x: mirroredX * window.innerWidth,
+    y: index.y * window.innerHeight,
+  };
+
+  setCursor(pinchPointMirror);
 
   const isPinching = pinchStrength < threshold;
 
@@ -259,7 +455,7 @@ function processPinch(landmarks) {
     pinchMode = 'idle';
 
     const now = Date.now();
-    const btn = hitTestButtons(pinchPoint);
+    const btn = hitTestButtons(pinchPointUI);
     if (btn && now - lastButtonPress > BUTTON_COOLDOWN_MS) {
       runAction(btn.dataset.action);
       flashButton(btn);
@@ -268,8 +464,8 @@ function processPinch(landmarks) {
       return true;
     }
 
-    if (editMode) {
-      const target = widgetUnderPoint(pinchPoint);
+    if (editMode && mode === 'mirror') {
+      const target = widgetUnderPoint(pinchPointMirror);
       if (target) {
         draggingId = target;
         pinchMode = 'drag';
@@ -279,8 +475,8 @@ function processPinch(landmarks) {
     }
   }
 
-  if (pinchMode === 'drag' && draggingId && editMode) {
-    setWidgetPosition(draggingId, pinchPoint.x, pinchPoint.y);
+  if (pinchMode === 'drag' && draggingId && editMode && mode === 'mirror') {
+    setWidgetPosition(draggingId, pinchPointMirror.x, pinchPointMirror.y);
   }
 
   return true;
@@ -294,12 +490,27 @@ function onResults(results) {
     pinchMode = 'none';
     draggingId = null;
     setCursor(null);
-    const idleMessage = editMode ? 'Show your hand to reposition cards' : 'Pinch Change Panel Position to enable moving';
+    lastSwipeX = null;
+    swipeStartX = null;
+    swipeStartTime = 0;
+    const idleMessage =
+      mode === 'tryon'
+        ? 'Swipe left to go back · Pinch shutter to take a photo'
+        : editMode
+        ? 'Show your hand to reposition cards'
+        : 'Pinch Change Panel Position to enable moving';
     setStatus(idleMessage, 'idle');
     return;
   }
 
-  setStatus(editMode ? 'Tracking hands · Move mode on' : 'Tracking hands · Move mode off', 'ok');
+  setStatus(
+    mode === 'tryon'
+      ? 'Tracking hands · Swipe left to exit · Pinch shutter to shoot'
+      : editMode
+      ? 'Tracking hands · Move mode on'
+      : 'Tracking hands · Move mode off',
+    'ok',
+  );
   let anyPinch = false;
   hands.forEach((landmarks) => {
     if (processPinch(landmarks)) {
@@ -314,6 +525,11 @@ function onResults(results) {
     pinchActive = false;
     draggingId = null;
     pinchMode = 'none';
+  }
+
+  detectSwipes(hands);
+  if (mode === 'tryon' && photoReady && !isCountingDown) {
+    detectThumbGestures(hands);
   }
 }
 
@@ -336,7 +552,9 @@ async function initCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
     videoElement.srcObject = stream;
+    tryonVideo.srcObject = stream;
     await videoElement.play();
+    await tryonVideo.play();
     setStatus('Camera on · Ready to track', 'ok');
   } catch (err) {
     setStatus('Camera blocked. Allow access to move widgets.', 'warn');
@@ -367,5 +585,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   setEditMode(false);
+  setMode('mirror');
   initCamera();
 });
