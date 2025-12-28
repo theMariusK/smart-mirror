@@ -280,34 +280,51 @@ function detectSwipes(hands) {
   });
 }
 
-function detectThumbGestures(hands) {
-  const now = Date.now();
-  if (now - lastGestureTime < GESTURE_COOLDOWN_MS) return;
-  const folded = (tip, pip) => tip.y > pip.y + 0.02;
+function isFingerFolded(landmarks, tipIdx) {
+  const wrist = landmarks[0];
+  const tip = landmarks[tipIdx];
+  const pip = landmarks[tipIdx - 2];
+  return distance(tip, wrist) < distance(pip, wrist);
+}
 
-  for (const landmarks of hands) {
-    const thumbTip = landmarks[4];
-    const thumbMcp = landmarks[2];
-    const wrist = landmarks[0];
-    const fingersFolded =
-      folded(landmarks[8], landmarks[6]) &&
-      folded(landmarks[12], landmarks[10]) &&
-      folded(landmarks[16], landmarks[14]) &&
-      folded(landmarks[20], landmarks[18]);
+function detectCurrentGesture(landmarks) {
+  const thumbTip = landmarks[4];
+  const thumbMcp = landmarks[2];
+  const wrist = landmarks[0];
+  const indexTip = landmarks[8];
 
-    if (!fingersFolded) continue;
+  // Check for Thumbs Up/Down
+  // Fingers (Index, Middle, Ring, Pinky) must be folded
+  const fingersFolded =
+    isFingerFolded(landmarks, 8) &&
+    isFingerFolded(landmarks, 12) &&
+    isFingerFolded(landmarks, 16) &&
+    isFingerFolded(landmarks, 20);
 
-    if (thumbTip.y < thumbMcp.y - 0.04 && thumbTip.y < wrist.y - 0.02) {
-      lastGestureTime = now;
-      savePhoto();
-      return;
+  if (fingersFolded) {
+    // Thumbs Up: Tip significantly above MCP (smaller y)
+    if (thumbTip.y < thumbMcp.y - 0.05 && thumbTip.y < wrist.y - 0.05) {
+      return 'thumbs-up';
     }
-    if (thumbTip.y > thumbMcp.y + 0.04 && thumbTip.y > wrist.y + 0.02) {
-      lastGestureTime = now;
-      retakePhoto();
-      return;
+    // Thumbs Down: Tip significantly below MCP (larger y)
+    if (thumbTip.y > thumbMcp.y + 0.05 && thumbTip.y > wrist.y + 0.05) {
+      return 'thumbs-down';
     }
+    return 'none';
   }
+
+  // Check for Pinch
+  // Index and Thumb close, other fingers not necessarily folded (but helps if they are open, though we'll be lenient)
+  const pinchStrength = distance(thumbTip, indexTip);
+  const palm = landmarks[0];
+  const handSpan = distance(palm, landmarks[9]);
+  const pinchThreshold = Math.max(handSpan * 0.7, 0.05);
+
+  if (pinchStrength < pinchThreshold) {
+    return 'pinch';
+  }
+
+  return 'none';
 }
 
 function hidePhotoPreview() {
@@ -512,9 +529,55 @@ function onResults(results) {
     'ok',
   );
   let anyPinch = false;
+  const now = Date.now();
+
   hands.forEach((landmarks) => {
-    if (processPinch(landmarks)) {
-      anyPinch = true;
+    const gesture = detectCurrentGesture(landmarks);
+
+    // Handle Thumbs Gestures (Priority)
+    if (mode === 'tryon' && photoReady && !isCountingDown && now - lastGestureTime > GESTURE_COOLDOWN_MS) {
+      if (gesture === 'thumbs-up') {
+        lastGestureTime = now;
+        savePhoto();
+        return; // Skip pinch processing if gesture detected
+      }
+      if (gesture === 'thumbs-down') {
+        lastGestureTime = now;
+        retakePhoto();
+        return; // Skip pinch processing if gesture detected
+      }
+    }
+
+    // Handle Pinch
+    if (gesture === 'pinch') {
+      // We still use processPinch for the side effects (cursor, drag, click)
+      // But we only call it if we detected a pinch gesture
+      if (processPinch(landmarks)) {
+        anyPinch = true;
+      }
+    } else {
+      // Even if not pinching, we might want to update cursor position if hand is visible?
+      // processPinch handles cursor updating too.
+      // Let's call processPinch but it will return false if strength is low,
+      // BUT we already checked strength in detectCurrentGesture.
+      // Actually processPinch does more than just check strength, it updates cursor.
+      // So we should probably call processPinch regardless for cursor, but rely on it for logic.
+      // However, processPinch has its own threshold logic.
+      // To be consistent, we should probably let processPinch handle the cursor,
+      // but we can optimize by only allowing 'active' pinch actions if gesture === 'pinch'.
+
+      // Let's stick to the plan: use processPinch but ensure it doesn't conflict.
+      // The issue is processPinch has its own threshold.
+      // Let's just call processPinch as before, but we know Thumbs gestures are handled above.
+      // Wait, if I return above, processPinch isn't called for that hand. That's good.
+
+      // What if gesture is 'none' but processPinch thinks it's a pinch?
+      // processPinch uses a similar threshold.
+      // Let's rely on processPinch for the cursor and interaction, 
+      // but we've already filtered out Thumbs gestures.
+      if (processPinch(landmarks)) {
+        anyPinch = true;
+      }
     }
   });
 
@@ -528,9 +591,6 @@ function onResults(results) {
   }
 
   detectSwipes(hands);
-  if (mode === 'tryon' && photoReady && !isCountingDown) {
-    detectThumbGestures(hands);
-  }
 }
 
 async function initCamera() {
