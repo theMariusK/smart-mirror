@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Mirror</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="hand-cursor" aria-hidden="true"></div>
+  <div id="mirror">
+    <div class="atmosphere"></div>
+    <div class="grid">
+      <header class="masthead floating">
+        <div class="brand">Smart Mirror</div>
+        <div class="status">
+          <span class="dot" id="camera-dot"></span>
+          <span id="status-text">Waiting for camera...</span>
+        </div>
+      </header>
+
+      <section id="weather" class="widget floating">
+        <div class="widget-label">Weather</div>
+        <div class="weather-row">
+          <div class="temp-main">
+            <div class="temp-value" id="temp-now">21°C</div>
+            <div class="temp-summary" id="temp-summary">Calm winds · Feels like 20°C</div>
+          </div>
+          <div class="temp-icon">☁️</div>
+        </div>
+        <div class="forecast">
+          <div class="forecast-item">
+            <div class="day">Now</div>
+            <div class="value">Cloudy</div>
+          </div>
+          <div class="forecast-item">
+            <div class="day">Noon</div>
+            <div class="value">22°C</div>
+          </div>
+          <div class="forecast-item">
+            <div class="day">Eve</div>
+            <div class="value">19°C</div>
+          </div>
+          <div class="forecast-item">
+            <div class="day">Night</div>
+            <div class="value">16°C</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="notes" class="widget floating">
+        <div class="widget-label">Notes</div>
+        <ul id="notes-list">
+          <li>Stretch for 5 minutes.</li>
+          <li>Pick up parcel at 3:30 PM.</li>
+          <li>Water the plants before leaving.</li>
+        </ul>
+      </section>
+
+      <section id="timeline" class="widget floating">
+        <div class="widget-label">Today</div>
+        <div class="timeline">
+          <div class="event">
+            <div class="time">08:30</div>
+            <div class="desc">Latte & check messages</div>
+          </div>
+          <div class="event">
+            <div class="time">12:00</div>
+            <div class="desc">Lunch with Alex</div>
+          </div>
+          <div class="event">
+            <div class="time">18:45</div>
+            <div class="desc">Gym · Push day</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="helper floating">
+        <div class="widget-label">Gesture tips</div>
+        <p>Pinch thumb + index to grab a card. Move your hand to reposition, release to drop.</p>
+      </section>
+    </div>
+  </div>
+
+  <video id="input-video" playsinline></video>
+
+  <div id="controls" class="controls floating">
+    <button class="control-btn" data-action="reset" aria-pressed="false">Set panels to default</button>
+    <button class="control-btn" data-action="toggle-edit" aria-pressed="false">Change panel position</button>
+    <div class="controls-hint">Pinch over a button to activate</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
