@@ -430,7 +430,7 @@ function processPinch(landmarks) {
   const handSpan = distance(palm, landmarks[9]);
   const threshold = Math.max(handSpan * 0.7, 0.05);
 
-  const mirroredX = 1 - index.x;
+  const mirroredX = mode === 'tryon' ? index.x : 1 - index.x;
   const pinchPointMirror = {
     x: mirrorRect.left + mirroredX * mirrorRect.width,
     y: mirrorRect.top + index.y * mirrorRect.height,
@@ -497,8 +497,8 @@ function onResults(results) {
       mode === 'tryon'
         ? 'Swipe left to go back · Pinch shutter to take a photo'
         : editMode
-        ? 'Show your hand to reposition cards'
-        : 'Pinch Change Panel Position to enable moving';
+          ? 'Show your hand to reposition cards'
+          : 'Pinch Change Panel Position to enable moving';
     setStatus(idleMessage, 'idle');
     return;
   }
@@ -507,8 +507,8 @@ function onResults(results) {
     mode === 'tryon'
       ? 'Tracking hands · Swipe left to exit · Pinch shutter to shoot'
       : editMode
-      ? 'Tracking hands · Move mode on'
-      : 'Tracking hands · Move mode off',
+        ? 'Tracking hands · Move mode on'
+        : 'Tracking hands · Move mode off',
     'ok',
   );
   let anyPinch = false;
