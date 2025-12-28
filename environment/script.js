@@ -15,7 +15,9 @@ let pinchMode = 'none'; // none | drag | button | idle
 let editMode = false;
 let lastButtonPress = 0;
 const BUTTON_COOLDOWN_MS = 800;
-const SNAP_SIZE = 24;
+const SNAP_SIZE = 16;
+const ALIGN_THRESHOLD = 140;
+const BUTTON_HIT_EXPAND = 24;
 
 function setStatus(message, color) {
   statusText.textContent = message;
@@ -92,6 +94,20 @@ function findNearestWidget(point) {
   return nearestId;
 }
 
+function getRect(el) {
+  const rect = el.getBoundingClientRect();
+  return {
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom,
+    centerX: rect.left + rect.width / 2,
+    centerY: rect.top + rect.height / 2,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
 function widgetUnderPoint(point) {
   let targetId = null;
   widgetElements.forEach((el) => {
@@ -115,7 +131,13 @@ function setCursor(point) {
 function hitTestButtons(point) {
   return controlButtons.find((btn) => {
     const rect = btn.getBoundingClientRect();
-    return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+    const expanded = {
+      left: rect.left - BUTTON_HIT_EXPAND,
+      right: rect.right + BUTTON_HIT_EXPAND,
+      top: rect.top - BUTTON_HIT_EXPAND,
+      bottom: rect.bottom + BUTTON_HIT_EXPAND,
+    };
+    return point.x >= expanded.left && point.x <= expanded.right && point.y >= expanded.top && point.y <= expanded.bottom;
   });
 }
 
@@ -158,16 +180,52 @@ function runAction(action) {
 function snapWidget(id) {
   const state = widgetState[id];
   if (!state) return;
+  const selfRect = getRect(state.el);
+  const others = widgetElements.filter((el) => el.id !== id).map(getRect);
+
+  let deltaX = 0;
+  let deltaY = 0;
+  let bestX = ALIGN_THRESHOLD + 1;
+  let bestY = ALIGN_THRESHOLD + 1;
+
+  others.forEach((r) => {
+    const candidatesX = [
+      { dist: Math.abs(selfRect.left - r.left), delta: r.left - selfRect.left },
+      { dist: Math.abs(selfRect.centerX - r.centerX), delta: r.centerX - selfRect.centerX },
+      { dist: Math.abs(selfRect.right - r.right), delta: r.right - selfRect.right },
+    ];
+    candidatesX.forEach((c) => {
+      if (c.dist < bestX && c.dist <= ALIGN_THRESHOLD) {
+        bestX = c.dist;
+        deltaX = c.delta;
+      }
+    });
+
+    const candidatesY = [
+      { dist: Math.abs(selfRect.top - r.top), delta: r.top - selfRect.top },
+      { dist: Math.abs(selfRect.centerY - r.centerY), delta: r.centerY - selfRect.centerY },
+      { dist: Math.abs(selfRect.bottom - r.bottom), delta: r.bottom - selfRect.bottom },
+    ];
+    candidatesY.forEach((c) => {
+      if (c.dist < bestY && c.dist <= ALIGN_THRESHOLD) {
+        bestY = c.dist;
+        deltaY = c.delta;
+      }
+    });
+  });
+
   const snap = (v) => Math.round(v / SNAP_SIZE) * SNAP_SIZE;
+
   state.offset = {
-    x: snap(state.offset.x),
-    y: snap(state.offset.y),
+    x: snap(state.offset.x + deltaX),
+    y: snap(state.offset.y + deltaY),
   };
-  state.el.style.transition = 'transform 0.15s ease';
+
+  state.el.style.transition = 'transform 0.18s ease';
   state.el.style.transform = `translate(${state.offset.x}px, ${state.offset.y}px)`;
   setTimeout(() => {
     state.el.style.transition = '';
-  }, 180);
+  }, 200);
 }
 
 function processPinch(landmarks) {
